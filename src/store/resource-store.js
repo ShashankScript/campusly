@@ -32,10 +32,31 @@ export const useResourceStore = create((set, get) => ({
   },
 
   // Initialize data from Backend
-  initializeData: async () => {
+  initializeData: async (isAuthenticated = false) => {
+    // Only fetch data if user is authenticated
+    if (!isAuthenticated) {
+      console.log('Skipping resource fetch - user not authenticated');
+      return;
+    }
+
     try {
-      const res = await fetch('/api/resources');
-      const { data } = await res.json();
+      const res = await fetch('/api/resources', {
+        credentials: 'include' // Include cookies for authentication
+      });
+      
+      if (!res.ok) {
+        console.error('Failed to fetch resources:', res.status, res.statusText);
+        return;
+      }
+      
+      const response = await res.json();
+      
+      if (!response.success || !response.data) {
+        console.error('Invalid API response:', response);
+        return;
+      }
+      
+      const data = response.data;
 
       // Segregate resources
       const rooms = data.filter(r => r.type === 'room').map(normalizeResource);
@@ -43,19 +64,21 @@ export const useResourceStore = create((set, get) => ({
       const books = data.filter(r => r.type === 'book').map(normalizeResource);
       const faculty = data.filter(r => r.type === 'faculty_hour').map(normalizeResource);
 
-      // Fetch bookings (optional, could be lazy loaded)
-      // const bookingRes = await fetch('/api/bookings');
-      // const bookingsData = await bookingRes.json();
-
       set({
         rooms,
         equipment,
         books,
         faculty,
-        // bookings: bookingsData.data 
       });
     } catch (error) {
       console.error("Failed to fetch resources:", error);
+      // Set empty arrays as fallback
+      set({
+        rooms: [],
+        equipment: [],
+        books: [],
+        faculty: [],
+      });
     }
   },
 
@@ -76,20 +99,48 @@ export const useResourceStore = create((set, get) => ({
     const apiType = apiTypeMap[type] || 'room';
 
     try {
+      const requestData = {
+        name: resourceData.name,
+        type: apiType,
+        description: resourceData.notes || '',
+        capacity: resourceData.capacity || 1,
+        location: resourceData.location || '',
+        meta: resourceData // Store full object in meta for specific fields
+      };
+      
+      console.log('Sending resource data:', requestData);
+      
       const res = await fetch('/api/resources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: resourceData.name,
-          type: apiType,
-          description: resourceData.notes,
-          capacity: resourceData.capacity || 1,
-          location: resourceData.location,
-          meta: resourceData // Store full object in meta for specific fields
-        })
+        credentials: 'include', // Include cookies for authentication
+        body: JSON.stringify(requestData)
       });
 
-      if (!res.ok) throw new Error('Failed to create resource');
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('API Error Response:', errorData);
+        
+        let errorMessage = 'Failed to create resource';
+        
+        if (errorData.error) {
+          if (typeof errorData.error === 'string') {
+            errorMessage = errorData.error;
+          } else if (errorData.error.fieldErrors) {
+            // Handle flattened Zod validation errors
+            const fieldErrors = Object.entries(errorData.error.fieldErrors)
+              .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+              .join('; ');
+            errorMessage = `Validation errors: ${fieldErrors}`;
+          } else if (errorData.error.formErrors && errorData.error.formErrors.length > 0) {
+            errorMessage = `Form errors: ${errorData.error.formErrors.join(', ')}`;
+          } else if (errorData.error.message) {
+            errorMessage = errorData.error.message;
+          }
+        }
+        
+        throw new Error(errorMessage);
+      }
       const { data } = await res.json();
       const normalized = normalizeResource(data);
 
@@ -130,6 +181,7 @@ export const useResourceStore = create((set, get) => ({
       const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies for authentication
         body: JSON.stringify({
           user: booking.bookedById,
           resource: booking.resourceId,

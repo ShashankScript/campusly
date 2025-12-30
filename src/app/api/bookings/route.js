@@ -2,11 +2,19 @@ import dbConnect from '@/lib/db';
 import Booking from '@/models/Booking';
 import Resource from '@/models/Resource';
 import { bookingSchema } from '@/lib/validations';
+import { getSessionFromRequest } from '@/lib/auth-middleware';
 import { NextResponse } from 'next/server';
 
 export async function GET(req) {
     try {
         await dbConnect();
+        
+        // Get session for authentication
+        const session = await getSessionFromRequest(req);
+        if (!session?.user) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { searchParams } = new URL(req.url);
         const userId = searchParams.get('userId');
         const resourceId = searchParams.get('resourceId');
@@ -14,7 +22,16 @@ export async function GET(req) {
         const end = searchParams.get('end');
 
         const query = {};
-        if (userId) query.user = userId;
+        
+        // Role-based filtering
+        if (session.user.role === 'student') {
+            // Students can only see their own bookings
+            query.user = session.user.id;
+        } else if (userId) {
+            // Admin and faculty can filter by userId
+            query.user = userId;
+        }
+        
         if (resourceId) query.resource = resourceId;
 
         // Date range filter
@@ -37,6 +54,13 @@ export async function GET(req) {
 export async function POST(req) {
     try {
         await dbConnect();
+        
+        // Get session for authentication
+        const session = await getSessionFromRequest(req);
+        if (!session?.user) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await req.json();
 
         // Validation
@@ -45,7 +69,7 @@ export async function POST(req) {
             return NextResponse.json({ success: false, error: validation.error.flatten() }, { status: 400 });
         }
 
-        const { resource: resourceId, startTime, endTime, user, notes } = validation.data;
+        const { resource: resourceId, startTime, endTime, notes } = validation.data;
         const start = new Date(startTime);
         const end = new Date(endTime);
 
@@ -62,7 +86,7 @@ export async function POST(req) {
         }
 
         const booking = await Booking.create({
-            user,
+            user: session.user.id,
             resource: resourceId,
             startTime: start,
             endTime: end,

@@ -1,10 +1,23 @@
 import dbConnect from '@/lib/db';
 import Booking from '@/models/Booking';
+import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 
 export async function GET(req) {
     try {
         await dbConnect();
+        
+        // Get session for authentication
+        const session = await auth.api.getSession({ headers: req.headers });
+        if (!session?.user) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Check permissions - only admin and faculty can view analytics
+        if (!['admin', 'faculty'].includes(session.user.role)) {
+            return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+        }
+
         // Check for bookings with status 'confirmed' or 'completed'
         const utilization = await Booking.aggregate([
             {

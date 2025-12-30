@@ -1,5 +1,25 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/auth-store';
+
+// Helper function to make authenticated API calls
+const apiCall = async (url, options = {}) => {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    credentials: 'include', // Include cookies for Better Auth session
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Network error' }));
+    throw error;
+  }
+  
+  return res.json();
+};
 
 export function useResources({ type, search } = {}) {
     return useQuery({
@@ -9,27 +29,24 @@ export function useResources({ type, search } = {}) {
             if (type && type !== 'all') params.append('type', type);
             if (search) params.append('search', search);
 
-            const res = await fetch(`/api/resources?${params.toString()}`);
-            if (!res.ok) throw new Error('Failed to fetch resources');
-            return res.json();
+            return apiCall(`/api/resources?${params.toString()}`);
         }
     });
 }
 
 export function useCreateResource() {
     const queryClient = useQueryClient();
+    const { user } = useAuthStore();
+    
     return useMutation({
         mutationFn: async (newResource) => {
-            const res = await fetch('/api/resources', {
+            return apiCall('/api/resources', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newResource),
+                body: JSON.stringify({
+                    ...newResource,
+                    createdBy: user?.id,
+                }),
             });
-            if (!res.ok) {
-                const error = await res.json();
-                throw error;
-            }
-            return res.json();
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['resources'] });
@@ -37,53 +54,53 @@ export function useCreateResource() {
     });
 }
 
-export function useBookings({ resourceId, start, end } = {}) {
+export function useBookings({ resourceId, start, end, userId } = {}) {
+    const { user } = useAuthStore();
+    
     return useQuery({
-        queryKey: ['bookings', { resourceId, start, end }],
+        queryKey: ['bookings', { resourceId, start, end, userId }],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (resourceId) params.append('resourceId', resourceId);
             if (start) params.append('start', start);
             if (end) params.append('end', end);
+            if (userId) params.append('userId', userId);
 
-            const res = await fetch(`/api/bookings?${params.toString()}`);
-            if (!res.ok) throw new Error('Failed to fetch bookings');
-            return res.json();
+            return apiCall(`/api/bookings?${params.toString()}`);
         },
-        enabled: !!resourceId || (!!start && !!end),
+        enabled: !!user && (!!resourceId || (!!start && !!end) || !!userId),
     });
 }
 
 export function useCreateBooking() {
     const queryClient = useQueryClient();
+    const { user } = useAuthStore();
+    
     return useMutation({
         mutationFn: async (bookingData) => {
-            const res = await fetch('/api/bookings', {
+            return apiCall('/api/bookings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bookingData),
+                body: JSON.stringify({
+                    ...bookingData,
+                    user: user?.id,
+                }),
             });
-            if (!res.ok) {
-                const error = await res.json();
-                throw error; // Throw detailed error from API
-            }
-            return res.json();
         },
         onSuccess: (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['bookings'] });
-            // Also invalidate utilization if needed
             queryClient.invalidateQueries({ queryKey: ['utilization'] });
         },
     });
 }
 
 export function useUtilizationStats() {
+    const { user } = useAuthStore();
+    
     return useQuery({
         queryKey: ['utilization'],
         queryFn: async () => {
-            const res = await fetch('/api/reports/utilization');
-            if (!res.ok) throw new Error('Failed to fetch utilization stats');
-            return res.json();
-        }
+            return apiCall('/api/reports/utilization');
+        },
+        enabled: !!user,
     });
 }

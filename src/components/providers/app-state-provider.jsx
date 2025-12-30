@@ -6,7 +6,7 @@ import { useResourceStore } from '@/store/resource-store';
 import { useSession } from '@/lib/auth-client';
 
 export default function AppStateProvider({ children }) {
-    const { login, logout } = useAuthStore();
+    const { login, logout, isAuthenticated } = useAuthStore();
     const { initializeData } = useResourceStore();
     const { data: session } = useSession();
 
@@ -25,8 +25,10 @@ export default function AppStateProvider({ children }) {
     }, [session, login, logout]);
 
     useEffect(() => {
-        initializeData();
-    }, [initializeData]);
+        if (isAuthenticated) {
+            initializeData(isAuthenticated);
+        }
+    }, [isAuthenticated, initializeData]);
 
     return <>{children}</>;
 }

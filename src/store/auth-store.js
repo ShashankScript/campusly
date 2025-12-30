@@ -1,39 +1,123 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { simpleAuthClient } from '@/lib/simple-auth-client'
 
-export const useAuthStore = create(
-  persist(
-    (set, get) => ({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
+export const useAuthStore = create((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  
+  // Initialize auth state using simple auth only
+  initializeAuth: async () => {
+    set({ isLoading: true })
+    try {
+      console.log('Initializing auth with simple auth...')
+      const session = await simpleAuthClient.getSession()
+      console.log('Simple Auth session:', session)
       
-      login: (userData) => {
+      if (session?.user) {
+        console.log('User authenticated:', session.user)
         set({ 
-          user: userData, 
+          user: session.user, 
           isAuthenticated: true,
           isLoading: false 
         })
-      },
-      
-      logout: () => {
+      } else {
+        console.log('No user session found')
         set({ 
           user: null, 
           isAuthenticated: false,
           isLoading: false 
         })
-        // Clear all localStorage data on logout
-        localStorage.removeItem('campus-resources')
-        localStorage.removeItem('campus-bookings')
-      },
+      }
+    } catch (error) {
+      console.error('Failed to initialize auth:', error)
+      set({ 
+        user: null, 
+        isAuthenticated: false,
+        isLoading: false 
+      })
+    }
+  },
+  
+  login: async (credentials) => {
+    set({ isLoading: true })
+    try {
+      const result = await simpleAuthClient.signIn({
+        email: credentials.email,
+        password: credentials.password,
+      })
       
-      setLoading: (loading) => {
-        set({ isLoading: loading })
-      },
+      if (result?.data?.user) {
+        set({ 
+          user: result.data.user, 
+          isAuthenticated: true,
+          isLoading: false 
+        })
+        return { success: true, user: result.data.user }
+      } else {
+        set({ isLoading: false })
+        return { success: false, error: result?.error?.message || 'Login failed' }
+      }
+    } catch (error) {
+      set({ isLoading: false })
+      return { success: false, error: error.message || 'Login failed' }
+    }
+  },
+  
+  register: async (userData) => {
+    set({ isLoading: true })
+    try {
+      const result = await simpleAuthClient.signUp({
+        email: userData.email,
+        password: userData.password,
+        name: userData.name,
+        role: userData.role,
+      })
       
-      updateUser: (userData) => {
-        set({ user: { ...get().user, ...userData } })
-      },
+      if (result?.data?.user) {
+        set({ 
+          user: result.data.user, 
+          isAuthenticated: true,
+          isLoading: false 
+        })
+        return { success: true, user: result.data.user }
+      } else {
+        set({ isLoading: false })
+        return { success: false, error: result?.error?.message || 'Registration failed' }
+      }
+    } catch (error) {
+      set({ isLoading: false })
+      return { success: false, error: error.message || 'Registration failed' }
+    }
+  },
+  
+  logout: async () => {
+    set({ isLoading: true })
+    try {
+      await simpleAuthClient.signOut()
+      set({ 
+        user: null, 
+        isAuthenticated: false,
+        isLoading: false 
+      })
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Force logout even if API call fails
+      set({ 
+        user: null, 
+        isAuthenticated: false,
+        isLoading: false 
+      })
+    }
+  },
+  
+  setLoading: (loading) => {
+    set({ isLoading: loading })
+  },
+  
+  updateUser: (userData) => {
+    set({ user: { ...get().user, ...userData } })
+  },
 
       // Role-based permission checks
       hasPermission: (action) => {
@@ -93,13 +177,4 @@ export const useAuthStore = create(
         if (booking.bookedById === user.id) return true
         return false
       }
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({ 
-        user: state.user, 
-        isAuthenticated: state.isAuthenticated 
-      })
-    }
-  )
-)
+    }))

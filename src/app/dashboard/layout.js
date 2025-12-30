@@ -30,8 +30,10 @@ export default function DashboardLayout({ children }) {
     }, [isAuthenticated, router])
 
     useEffect(() => {
-        initializeData()
-    }, [initializeData])
+        if (isAuthenticated) {
+            initializeData(isAuthenticated)
+        }
+    }, [isAuthenticated, initializeData])
 
     const handleCloseResourceForm = () => {
         setShowResourceForm(false)

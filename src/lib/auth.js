@@ -1,16 +1,11 @@
 
 import { betterAuth } from "better-auth";
-import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import mongoose from "mongoose";
 import { z } from "zod";
-import dbConnect from "./db";
 
 // Zod schema for environment variables
 const envSchema = z.object({
     MONGODB_URI: z.string().url(),
     BETTER_AUTH_SECRET: z.string().min(1),
-    GOOGLE_CLIENT_ID: z.string().min(1),
-    GOOGLE_CLIENT_SECRET: z.string().min(1),
 });
 
 // Validate environment variables using process.env
@@ -25,16 +20,14 @@ if (!env.success) {
 }
 
 export const auth = betterAuth({
-    database: async () => {
-        // Ensure DB is connected before adapter tries to use it
-        const conn = await dbConnect();
-        return mongodbAdapter(conn.connection.db, mongoose);
+    database: {
+        provider: "mongodb",
+        url: process.env.MONGODB_URI,
     },
-    socialProviders: {
-        google: {
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        },
+    secret: process.env.BETTER_AUTH_SECRET,
+    emailAndPassword: {
+        enabled: true,
+        requireEmailVerification: false, // Disable for development
     },
     user: {
         additionalFields: {
@@ -42,8 +35,12 @@ export const auth = betterAuth({
                 type: "string",
                 required: false,
                 defaultValue: "student",
-                input: false,
+                input: true, // Allow role to be set during registration
             },
         },
+    },
+    session: {
+        expiresIn: 60 * 60 * 24 * 7, // 7 days
+        updateAge: 60 * 60 * 24, // 1 day
     },
 });
